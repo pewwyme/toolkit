@@ -359,22 +359,7 @@
         <div id="amo-link-output" style="margin-top:14px;"></div>
         <div class="status" id="amo-status"></div>
       </div>
-
-      <!-- <h3 class="sub">สร้างโค้ด Bookmarklet (เช็คอินจากมือถือด้วยการกดครั้งเดียว)</h3>
-      <div class="card">
-        <p class="desc" style="margin-bottom:14px;">โค้ดนี้คำนวณวันที่/WFH-WFO จากวันที่กดจริงเสมอ (ไม่ใช่ค่าตายตัว) โดยใช้โครงการที่เลือกไว้ด้านบน กดปุ่มเพื่อสร้าง แล้วนำไปตั้งเป็น Bookmark ตามขั้นตอนด้านล่าง</p>
-        <button class="primary" id="amo-bookmarklet-generate">สร้างโค้ด Bookmarklet</button>
-        <textarea id="amo-bookmarklet-output" readonly style="margin-top:14px;min-height:110px;font-family:ui-monospace,Consolas,monospace;font-size:11px;" placeholder="กดปุ่มด้านบนเพื่อสร้างโค้ด"></textarea>
-        <div class="btn-row" style="margin-top:10px;">
-          <button class="secondary" id="amo-bookmarklet-copy">คัดลอกโค้ด</button>
-        </div>
-        <div class="status" id="amo-bookmarklet-status"></div>
-        <details style="margin-top:14px;font-size:13px;color:var(--muted);">
-          <summary style="cursor:pointer;">วิธีติดตั้งบนมือถือ</summary>
-          <p style="margin-top:8px;"><b>iPhone (Safari):</b> เปิดเว็บอะไรก็ได้ → แตะไอคอนแชร์ → "Add Bookmark" → บันทึก → ไปที่ Bookmarks → แก้ไข bookmark ที่สร้างไว้ → เปลี่ยนชื่อเป็น "AMO เช็คอิน" → ลบ URL เดิมออกแล้ววางโค้ดด้านบนแทน → บันทึก</p>
-          <p><b>Android (Chrome):</b> เมนู ⋮ → Bookmarks → Add bookmark → ตั้งชื่อ "AMO เช็คอิน" → ลบ URL เดิมแล้ววางโค้ดด้านบนแทน → Save</p>
-        </details>
-      </div> -->
+      </div>
     </section>
 
     <section id="text-count">
@@ -1500,6 +1485,7 @@ const AMO_ENTRY = {
   let saved = null;
   try{ saved = localStorage.getItem('amo_project'); }catch(e){}
   if(saved) projectInput.value = saved;
+  else projectInput.value = 'PR9 (1 ท่าน) (แพรว)';
 
   const today = new Date();
   document.getElementById('amo-day').value = today.getDate();
@@ -1621,28 +1607,6 @@ document.getElementById('amo-generate').addEventListener('click', ()=>{
   window.open(url, '_blank');
   statusEl.className = 'status ok';
   statusEl.textContent = 'เปิดฟอร์มที่กรอกไว้ล่วงหน้าในแท็บใหม่แล้ว — ตรวจสอบข้อมูลแล้วกด Submit เองในหน้านั้นได้เลย';
-});
-
-function generateAmoBookmarklet(project){
-  return "javascript:(function(){var d=new Date();var y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),dow=d.getDay();var wfh='0',wfo='0';if(dow>=1&&dow<=3){wfo='1';wfh='0';}else if(dow===4||dow===5){wfh='1';wfo='0';}else{alert('วันนี้เป็นเสาร์-อาทิตย์ ไม่ต้องเช็คอิน');return;}var project="+JSON.stringify(project)+";var base='"+AMO_FORM_BASE+"';var p=new URLSearchParams();p.set('usp','pp_url');p.set('entry."+AMO_ENTRY.project+"',project);p.set('entry."+AMO_ENTRY.dateBase+"_year',y);p.set('entry."+AMO_ENTRY.dateBase+"_month',m);p.set('entry."+AMO_ENTRY.dateBase+"_day',day);p.set('entry."+AMO_ENTRY.wfh+"',wfh);p.set('entry."+AMO_ENTRY.wfo+"',wfo);location.href=base+'?'+p.toString();})();";
-}
-
-document.getElementById('amo-bookmarklet-generate').addEventListener('click', ()=>{
-  const project = document.getElementById('amo-project').value;
-  const code = generateAmoBookmarklet(project);
-  document.getElementById('amo-bookmarklet-output').value = code;
-  const statusEl = document.getElementById('amo-bookmarklet-status');
-  statusEl.className = 'status ok';
-  statusEl.textContent = 'สร้างโค้ดสำหรับโครงการ "' + project + '" แล้ว คัดลอกไปตั้งเป็น Bookmark ได้เลย';
-});
-
-document.getElementById('amo-bookmarklet-copy').addEventListener('click', ()=>{
-  const code = document.getElementById('amo-bookmarklet-output').value;
-  const statusEl = document.getElementById('amo-bookmarklet-status');
-  if(!code){ statusEl.className = 'status err'; statusEl.textContent = 'กรุณาสร้างโค้ดก่อน'; return; }
-  copyToClipboard(code)
-    .then(()=>{ statusEl.className = 'status ok'; statusEl.textContent = 'คัดลอกโค้ด Bookmarklet แล้ว'; })
-    .catch(err => { statusEl.className = 'status err'; statusEl.textContent = 'คัดลอกไม่สำเร็จ: ' + err.message; });
 });
 
 document.getElementById('amo-clear').addEventListener('click', ()=>{
