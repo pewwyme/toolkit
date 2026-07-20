@@ -1452,6 +1452,9 @@ async function checkAmoCalendarForSelectedDate(){
     let matchedTitle = '';
     for(const ev of events){
       const text = (ev.summary || '') + ' ' + (ev.description || '');
+      if(text.includes('ลาป่วย')){ matchedType = 'sick'; matchedTitle = ev.summary || ''; break; }
+      if(text.includes('ลาพักร้อน') || text.includes('ลาพักผ่อน')){ matchedType = 'vacation'; matchedTitle = ev.summary || ''; break; }
+      if(text.includes('ลากิจ')){ matchedType = 'personal'; matchedTitle = ev.summary || ''; break; }
       if(/ป่วย/.test(text)){ matchedType = 'sick'; matchedTitle = ev.summary || ''; break; }
       if(/พักร้อน|พักผ่อน/.test(text)){ matchedType = 'vacation'; matchedTitle = ev.summary || ''; break; }
       if(/กิจ/.test(text)){ matchedType = 'personal'; matchedTitle = ev.summary || ''; break; }
