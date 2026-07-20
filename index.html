@@ -284,7 +284,7 @@
     </section>
 
     <section id="amo-report" class="active">
-      <h2>สร้างลิงก์กรอก AMO Checkup Daily Report</h2>
+      <h2>สร้างลิงก์กรอก Checkup Daily Report</h2>
       <p class="desc">เลือกวันที่ ระบบคำนวณ WFH/WFO ให้อัตโนมัติตามตารางของคุณ (จันทร์-พุธ = WFO, พฤหัส-ศุกร์ = WFH) แล้วเปิดฟอร์มที่กรอกไว้ให้ตรวจสอบก่อนกด Submit เอง — เครื่องมือนี้ไม่ได้ส่งฟอร์มแทนคุณ แค่กรอกล่วงหน้าให้เท่านั้น</p>
 
       <h3 class="sub">เชื่อม Google Calendar (เช็ควันลาอัตโนมัติ)</h3>
@@ -307,7 +307,7 @@
               <input type="number" id="amo-year" min="2020" max="2100" placeholder="YYYY" style="width:84px;padding:8px;border:1px solid var(--line);border-radius:6px;text-align:center;">
             </div>
           </div>
-          <div class="ts-field"><label>โครงการ</label><select id="amo-project"></select></div>
+          <div class="ts-field"><label>โครงการ (พิมพ์ตามที่ปรากฏในฟอร์มเป๊ะๆ ครั้งแรกครั้งเดียว ระบบจะจำให้)</label><input type="text" id="amo-project" placeholder="เช่น ABC (1 ท่าน) (ชื่อเล่น)"></div>
         </div>
         <div class="ts-grid" style="margin-top:14px;">
           <label style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:10px 12px;">
@@ -342,7 +342,7 @@
             </div>
             <div class="ts-field">
               <label>รายละเอียด</label>
-              <input type="text" id="amo-leave-detail" placeholder="เช่น 1-แพรว ปวดท้อง">
+              <input type="text" id="amo-leave-detail" placeholder="เช่น 1-ชื่อเล่น ปวดท้อง">
             </div>
           </div>
           <p style="font-size:12px;color:var(--muted);margin-top:10px;">โหมด "ลา" จะตั้ง WFH และ WFO เป็น 0 ให้อัตโนมัติ</p>
@@ -360,7 +360,7 @@
         <div class="status" id="amo-status"></div>
       </div>
 
-      <h3 class="sub">สร้างโค้ด Bookmarklet (เช็คอินจากมือถือด้วยการกดครั้งเดียว)</h3>
+      <!-- <h3 class="sub">สร้างโค้ด Bookmarklet (เช็คอินจากมือถือด้วยการกดครั้งเดียว)</h3>
       <div class="card">
         <p class="desc" style="margin-bottom:14px;">โค้ดนี้คำนวณวันที่/WFH-WFO จากวันที่กดจริงเสมอ (ไม่ใช่ค่าตายตัว) โดยใช้โครงการที่เลือกไว้ด้านบน กดปุ่มเพื่อสร้าง แล้วนำไปตั้งเป็น Bookmark ตามขั้นตอนด้านล่าง</p>
         <button class="primary" id="amo-bookmarklet-generate">สร้างโค้ด Bookmarklet</button>
@@ -374,7 +374,7 @@
           <p style="margin-top:8px;"><b>iPhone (Safari):</b> เปิดเว็บอะไรก็ได้ → แตะไอคอนแชร์ → "Add Bookmark" → บันทึก → ไปที่ Bookmarks → แก้ไข bookmark ที่สร้างไว้ → เปลี่ยนชื่อเป็น "AMO เช็คอิน" → ลบ URL เดิมออกแล้ววางโค้ดด้านบนแทน → บันทึก</p>
           <p><b>Android (Chrome):</b> เมนู ⋮ → Bookmarks → Add bookmark → ตั้งชื่อ "AMO เช็คอิน" → ลบ URL เดิมแล้ววางโค้ดด้านบนแทน → Save</p>
         </details>
-      </div>
+      </div> -->
     </section>
 
     <section id="text-count">
@@ -1495,31 +1495,11 @@ const AMO_ENTRY = {
   personal: '397833300',
   other: '1958782618'
 };
-const AMO_PROJECTS = [
-  'Implement (2 ท่าน) (ต๋อม,อุ้ม)',
-  'EDS (3 ท่าน) (อุ้ม,มั้นท์,ส้ม)',
-  'Improvement Support (ุ10 ท่าน) (หลิง,อ้อง,กิ๊ก,ดาริ,อาร์ต,โอม,นนท์,จิ๊บ,เบสท์,ตาล)',
-  'PR9 (1 ท่าน) (แพรว)',
-  'Postpaid Support (4 ท่าน) (เอ,มิ้น,ไก่,พี)',
-  'SEM (6 ท่าน) (มะ,น้ำ,ลูกหมี,นิว,ตูน,โอ๋)',
-  'BOT (1 ท่าน) (แม๊ก)',
-  'SCB (1 ท่าน) (นุ้ย)',
-  'Thai-NS (1 ท่าน) (เอฟ)'
-];
-
 (function initAmoForm(){
-  const sel = document.getElementById('amo-project');
-  AMO_PROJECTS.forEach(p=>{
-    const opt = document.createElement('option');
-    opt.value = p;
-    opt.textContent = p;
-    sel.appendChild(opt);
-  });
+  const projectInput = document.getElementById('amo-project');
   let saved = null;
   try{ saved = localStorage.getItem('amo_project'); }catch(e){}
-  const defaultProject = 'PR9 (1 ท่าน) (แพรว)';
-  if(saved && AMO_PROJECTS.includes(saved)) sel.value = saved;
-  else if(AMO_PROJECTS.includes(defaultProject)) sel.value = defaultProject;
+  if(saved) projectInput.value = saved;
 
   const today = new Date();
   document.getElementById('amo-day').value = today.getDate();
@@ -1587,6 +1567,9 @@ document.getElementById('amo-month').addEventListener('input', updateAmoDayType)
 document.getElementById('amo-year').addEventListener('input', updateAmoDayType);
 document.getElementById('amo-day').addEventListener('input', updateAmoLeaveDetailDefault);
 document.getElementById('amo-project').addEventListener('change', updateAmoLeaveDetailDefault);
+document.getElementById('amo-project').addEventListener('input', ()=>{
+  try{ localStorage.setItem('amo_project', document.getElementById('amo-project').value); }catch(e){}
+});
 document.getElementById('amo-day').addEventListener('input', debouncedCheckAmoCalendar);
 document.getElementById('amo-month').addEventListener('input', debouncedCheckAmoCalendar);
 document.getElementById('amo-year').addEventListener('input', debouncedCheckAmoCalendar);
