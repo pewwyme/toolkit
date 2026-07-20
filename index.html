@@ -6,6 +6,7 @@
 <title>เครื่องมือช่วยงาน — Data Utility Toolkit</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
     --bg:#F7F7F5; --panel:#FFFFFF; --line:#E2E1DC; --text:#232320; --muted:#6B6A63;
@@ -81,17 +82,17 @@
 <div class="app">
   <nav>
     <h1>เครื่องมือช่วยงาน</h1>
-    <button class="tab active" data-tab="json-excel">JSON ↔ Excel</button>
+    <button class="tab active" data-tab="amo-report">Check in</button>
+    <button class="tab" data-tab="json-excel">JSON ↔ Excel</button>
     <button class="tab" data-tab="csv-excel">CSV ↔ Excel</button>
     <button class="tab" data-tab="mask-data">Binding/Mask ข้อมูล</button>
     <button class="tab" data-tab="base64-image">Base64 ↔ Image</button>
     <button class="tab" data-tab="timesheet">Timesheet</button>
-    <button class="tab" data-tab="amo-report">AMO Daily Report</button>
     <button class="tab" data-tab="text-count">นับตัวอักษร/คำ</button>
   </nav>
   <main>
 
-    <section id="json-excel" class="active">
+    <section id="json-excel">
       <h2>แปลง JSON ↔ Excel</h2>
       <p class="desc">แปลงข้อมูลระหว่าง JSON และ Excel ได้ทั้งสองทิศทาง</p>
 
@@ -282,9 +283,18 @@
       </div>
     </section>
 
-    <section id="amo-report">
+    <section id="amo-report" class="active">
       <h2>สร้างลิงก์กรอก AMO Checkup Daily Report</h2>
       <p class="desc">เลือกวันที่ ระบบคำนวณ WFH/WFO ให้อัตโนมัติตามตารางของคุณ (จันทร์-พุธ = WFO, พฤหัส-ศุกร์ = WFH) แล้วเปิดฟอร์มที่กรอกไว้ให้ตรวจสอบก่อนกด Submit เอง — เครื่องมือนี้ไม่ได้ส่งฟอร์มแทนคุณ แค่กรอกล่วงหน้าให้เท่านั้น</p>
+
+      <h3 class="sub">เชื่อม Google Calendar (เช็ควันลาอัตโนมัติ)</h3>
+      <div class="card">
+        <p class="desc" style="margin-bottom:14px;">เชื่อมต่อครั้งเดียวต่อเซสชัน ระบบจะเช็คปฏิทินของคุณตามวันที่เลือกด้านล่าง ถ้าเจออีเวนต์ที่มีคำว่า "ป่วย" / "พักร้อน" (หรือ "พักผ่อน") / "กิจ" จะสลับเป็นโหมด "ลา" ให้อัตโนมัติ</p>
+        <button class="primary" id="amo-gcal-connect">เชื่อมต่อ Google Calendar</button>
+        <div class="status" id="amo-gcal-status"></div>
+      </div>
+
+      <h3 class="sub">ข้อมูลเช็คอิน</h3>
       <div class="card">
         <div class="ts-grid">
           <div class="ts-field">
@@ -1372,6 +1382,104 @@ document.getElementById('ts-clear').addEventListener('click', ()=>{
 addHolidayRow();
 loadTaskList();
 
+// ---- Google Calendar integration ----
+const AMO_GCAL_CLIENT_ID = '698468289431-v1jbnphhmk7eem0sc6boecm2tv8aq7ha.apps.googleusercontent.com';
+let amoGcalToken = null;
+let amoGcalTokenClient = null;
+let amoGcalDebounceTimer = null;
+
+function initAmoGcal(){
+  if(!window.google || !google.accounts || !google.accounts.oauth2){
+    setTimeout(initAmoGcal, 300);
+    return;
+  }
+  amoGcalTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: AMO_GCAL_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/calendar.readonly',
+    callback: (resp)=>{
+      const statusEl = document.getElementById('amo-gcal-status');
+      if(resp.error){
+        statusEl.className = 'status err';
+        statusEl.textContent = 'เชื่อมต่อไม่สำเร็จ: ' + resp.error;
+        return;
+      }
+      amoGcalToken = resp.access_token;
+      statusEl.className = 'status ok';
+      statusEl.textContent = 'เชื่อมต่อ Google Calendar สำเร็จ — กำลังตรวจสอบวันที่เลือกไว้...';
+      checkAmoCalendarForSelectedDate();
+    }
+  });
+}
+initAmoGcal();
+
+document.getElementById('amo-gcal-connect').addEventListener('click', ()=>{
+  const statusEl = document.getElementById('amo-gcal-status');
+  if(!amoGcalTokenClient){
+    statusEl.className = 'status err';
+    statusEl.textContent = 'ระบบ Google ยังโหลดไม่เสร็จ ลองอีกครั้งใน 2-3 วินาที';
+    return;
+  }
+  amoGcalTokenClient.requestAccessToken();
+});
+
+async function checkAmoCalendarForSelectedDate(){
+  if(!amoGcalToken) return;
+  const d = parseInt(document.getElementById('amo-day').value, 10);
+  const m = parseInt(document.getElementById('amo-month').value, 10);
+  const y = parseInt(document.getElementById('amo-year').value, 10);
+  if(!d || !m || !y) return;
+  const statusEl = document.getElementById('amo-gcal-status');
+  const dateStr = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const timeMin = `${dateStr}T00:00:00+07:00`;
+  const timeMax = `${dateStr}T23:59:59+07:00`;
+  statusEl.className = 'status';
+  statusEl.textContent = 'กำลังตรวจสอบปฏิทิน...';
+  try{
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true`;
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + amoGcalToken } });
+    if(!res.ok){
+      if(res.status === 401){
+        statusEl.className = 'status err';
+        statusEl.textContent = 'Token หมดอายุ กรุณากดเชื่อมต่อใหม่';
+        amoGcalToken = null;
+        return;
+      }
+      throw new Error('HTTP ' + res.status);
+    }
+    const data = await res.json();
+    const events = data.items || [];
+    let matchedType = null;
+    let matchedTitle = '';
+    for(const ev of events){
+      const text = (ev.summary || '') + ' ' + (ev.description || '');
+      if(/ป่วย/.test(text)){ matchedType = 'sick'; matchedTitle = ev.summary || ''; break; }
+      if(/พักร้อน|พักผ่อน/.test(text)){ matchedType = 'vacation'; matchedTitle = ev.summary || ''; break; }
+      if(/กิจ/.test(text)){ matchedType = 'personal'; matchedTitle = ev.summary || ''; break; }
+    }
+    if(matchedType){
+      document.getElementById('amo-kind-leave').checked = true;
+      document.getElementById('amo-leave-type').value = matchedType;
+      updateAmoKindUI();
+      const nickname = extractAmoNickname(document.getElementById('amo-project').value);
+      const suggested = matchedTitle ? `${d}-${nickname} ${matchedTitle}` : `${d}-${nickname} ทั้งวัน`;
+      document.getElementById('amo-leave-detail').value = suggested;
+      amoLastAutoDetail = suggested;
+      statusEl.className = 'status ok';
+      statusEl.textContent = 'พบอีเวนต์ "' + (matchedTitle || 'ลา') + '" ในปฏิทินวันนี้ → สลับเป็นโหมด "ลา" ให้แล้ว';
+    }else{
+      statusEl.className = 'status ok';
+      statusEl.textContent = 'ตรวจสอบปฏิทินแล้ว ไม่พบอีเวนต์การลาในวันที่เลือก (' + events.length + ' อีเวนต์)';
+    }
+  }catch(err){
+    statusEl.className = 'status err';
+    statusEl.textContent = 'ตรวจสอบปฏิทินไม่สำเร็จ: ' + err.message;
+  }
+}
+function debouncedCheckAmoCalendar(){
+  clearTimeout(amoGcalDebounceTimer);
+  amoGcalDebounceTimer = setTimeout(checkAmoCalendarForSelectedDate, 600);
+}
+
 // ---- AMO Daily Report link generator ----
 const AMO_FORM_BASE = 'https://docs.google.com/forms/d/e/1FAIpQLSdBZhba52tzuIJgktdrk4hfl2z-L98wqO02PIR4SCwvCIdTGA/viewform';
 const AMO_ENTRY = {
@@ -1476,6 +1584,9 @@ document.getElementById('amo-month').addEventListener('input', updateAmoDayType)
 document.getElementById('amo-year').addEventListener('input', updateAmoDayType);
 document.getElementById('amo-day').addEventListener('input', updateAmoLeaveDetailDefault);
 document.getElementById('amo-project').addEventListener('change', updateAmoLeaveDetailDefault);
+document.getElementById('amo-day').addEventListener('input', debouncedCheckAmoCalendar);
+document.getElementById('amo-month').addEventListener('input', debouncedCheckAmoCalendar);
+document.getElementById('amo-year').addEventListener('input', debouncedCheckAmoCalendar);
 document.getElementById('amo-wfh-check').addEventListener('change', ()=>{
   if(document.getElementById('amo-wfh-check').checked) document.getElementById('amo-wfo-check').checked = false;
 });
