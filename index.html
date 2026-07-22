@@ -88,6 +88,7 @@
     <button class="tab" data-tab="mask-data">Binding/Mask ข้อมูล</button>
     <button class="tab" data-tab="base64-image">Base64 ↔ Image</button>
     <button class="tab" data-tab="timesheet">Timesheet</button>
+    <button class="tab" data-tab="prompt-builder">จัดระเบียบคำถาม</button>
     <button class="tab" data-tab="text-count">นับตัวอักษร/คำ</button>
   </nav>
   <main>
@@ -292,6 +293,10 @@
         <p class="desc" style="margin-bottom:14px;">เชื่อมต่อครั้งเดียวต่อเซสชัน ระบบจะเช็คปฏิทินของคุณตามวันที่เลือกด้านล่าง ถ้าเจออีเวนต์ที่มีคำว่า "ป่วย" / "พักร้อน" (หรือ "พักผ่อน") / "กิจ" จะสลับเป็นโหมด "ลา" ให้อัตโนมัติ</p>
         <button class="primary" id="amo-gcal-connect">เชื่อมต่อ Google Calendar</button>
         <div class="status" id="amo-gcal-status"></div>
+        <div class="ts-field" id="amo-gcal-events-wrap" style="display:none;margin-top:14px;">
+          <label>อีเวนต์ในปฏิทินวันนี้ (เลือกเพื่อใช้ข้อมูล หรือเปลี่ยนถ้าเดาผิด)</label>
+          <select id="amo-gcal-events"></select>
+        </div>
       </div>
 
       <h3 class="sub">ข้อมูลเช็คอิน</h3>
@@ -359,6 +364,40 @@
         <div id="amo-link-output" style="margin-top:14px;"></div>
         <div class="status" id="amo-status"></div>
       </div>
+      </div>
+    </section>
+
+    <section id="prompt-builder">
+      <h2>จัดระเบียบคำถามให้ AI เข้าใจง่ายที่สุด</h2>
+      <p class="desc">กรอกทีละส่วน (ข้ามส่วนที่ไม่จำเป็นได้) ระบบจะประกอบให้เป็นพรอมต์ที่มีโครงสร้างชัดเจน พร้อมคัดลอกไปวางใน AI ตัวไหนก็ได้</p>
+
+      <div class="card">
+        <div class="ts-field"><label>1. กำหนดบทบาท (Role) — ไม่บังคับ</label><input type="text" id="pb-role" placeholder="เช่น คุณคือนักพัฒนาเว็บที่เชี่ยวชาญ JavaScript"></div>
+
+        <div class="ts-field" style="margin-top:14px;"><label>2. บริบท (Context)</label><textarea id="pb-context" style="min-height:80px;" placeholder="สถานการณ์ตอนนี้เป็นอย่างไร มีไฟล์/ระบบเดิมอะไรบ้าง ใครจะใช้ผลลัพธ์นี้"></textarea></div>
+
+        <div class="ts-field" style="margin-top:14px;"><label>3. เป้าหมาย (Goal)</label><textarea id="pb-goal" style="min-height:60px;" placeholder="ต้องการผลลัพธ์สุดท้ายแบบไหน เพื่ออะไร"></textarea></div>
+
+        <div class="ts-field" style="margin-top:14px;">
+          <label>4. ขั้นตอน (Steps) — ไม่บังคับ</label>
+          <div id="pb-steps-list"></div>
+          <button class="secondary" id="pb-add-step" style="margin-top:0;">+ เพิ่มขั้นตอน</button>
+        </div>
+
+        <div class="ts-field" style="margin-top:14px;"><label>5. รูปแบบผลลัพธ์ (Format) — ไม่บังคับ</label><input type="text" id="pb-format" placeholder="เช่น ขอเป็นไฟล์ .html ไฟล์เดียว เปิดใช้ได้เลย"></div>
+
+        <div class="ts-field" style="margin-top:14px;"><label>6. ข้อจำกัด / สิ่งที่ต้องระวัง (Constraints) — ไม่บังคับ</label><textarea id="pb-constraints" style="min-height:60px;" placeholder="สิ่งที่ห้ามทำ หรือต้องระวังเป็นพิเศษ (ขึ้นบรรทัดใหม่แยกแต่ละข้อได้)"></textarea></div>
+
+        <div class="btn-row" style="margin-top:18px;">
+          <button class="primary" id="pb-generate">จัดระเบียบพรอมต์</button>
+          <button class="secondary" id="pb-clear">ล้างข้อมูล</button>
+        </div>
+
+        <textarea id="pb-output" readonly style="margin-top:14px;min-height:220px;font-family:ui-monospace,Consolas,monospace;font-size:13px;" placeholder="ผลลัพธ์ที่จัดระเบียบแล้วจะแสดงตรงนี้"></textarea>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="secondary" id="pb-copy">คัดลอกพรอมต์</button>
+        </div>
+        <div class="status" id="pb-status"></div>
       </div>
     </section>
 
@@ -1407,6 +1446,48 @@ document.getElementById('amo-gcal-connect').addEventListener('click', ()=>{
   amoGcalTokenClient.requestAccessToken();
 });
 
+let amoGcalEvents = [];
+
+function guessAmoLeaveType(text){
+  if(text.includes('ลาป่วย')) return 'sick';
+  if(text.includes('ลาพักร้อน') || text.includes('ลาพักผ่อน')) return 'vacation';
+  if(text.includes('ลากิจ')) return 'personal';
+  if(/ป่วย/.test(text)) return 'sick';
+  if(/พักร้อน|พักผ่อน/.test(text)) return 'vacation';
+  if(/กิจ/.test(text)) return 'personal';
+  return null;
+}
+
+function applyAmoEventSelection(value){
+  const d = parseInt(document.getElementById('amo-day').value, 10);
+  const statusEl = document.getElementById('amo-gcal-status');
+  if(value === '' || value === 'none'){
+    document.getElementById('amo-kind-work').checked = true;
+    updateAmoKindUI();
+    statusEl.className = 'status ok';
+    statusEl.textContent = 'ตั้งเป็นโหมด "ทำงาน" ตามปกติ';
+    return;
+  }
+  const ev = amoGcalEvents[parseInt(value, 10)];
+  if(!ev) return;
+  const text = (ev.summary || '') + ' ' + (ev.description || '');
+  const matchedType = guessAmoLeaveType(text) || 'personal';
+  document.getElementById('amo-kind-leave').checked = true;
+  document.getElementById('amo-leave-type').value = matchedType;
+  updateAmoKindUI();
+  const nickname = extractAmoNickname(document.getElementById('amo-project').value);
+  const title = ev.summary || '';
+  const suggested = title ? `${d}-${nickname} ${title}` : `${d}-${nickname} ทั้งวัน`;
+  document.getElementById('amo-leave-detail').value = suggested;
+  amoLastAutoDetail = suggested;
+  statusEl.className = 'status ok';
+  statusEl.textContent = 'ใช้ข้อมูลจากอีเวนต์ "' + (title || 'ลา') + '" แล้ว — ตรวจสอบประเภทลาด้านล่างอีกครั้ง';
+}
+
+document.getElementById('amo-gcal-events').addEventListener('change', (e)=>{
+  applyAmoEventSelection(e.target.value);
+});
+
 async function checkAmoCalendarForSelectedDate(){
   if(!amoGcalToken) return;
   const d = parseInt(document.getElementById('amo-day').value, 10);
@@ -1414,6 +1495,8 @@ async function checkAmoCalendarForSelectedDate(){
   const y = parseInt(document.getElementById('amo-year').value, 10);
   if(!d || !m || !y) return;
   const statusEl = document.getElementById('amo-gcal-status');
+  const eventsWrap = document.getElementById('amo-gcal-events-wrap');
+  const eventsSel = document.getElementById('amo-gcal-events');
   const dateStr = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
   const timeMin = `${dateStr}T00:00:00+07:00`;
   const timeMax = `${dateStr}T23:59:59+07:00`;
@@ -1433,30 +1516,32 @@ async function checkAmoCalendarForSelectedDate(){
     }
     const data = await res.json();
     const events = data.items || [];
-    let matchedType = null;
-    let matchedTitle = '';
-    for(const ev of events){
-      const text = (ev.summary || '') + ' ' + (ev.description || '');
-      if(text.includes('ลาป่วย')){ matchedType = 'sick'; matchedTitle = ev.summary || ''; break; }
-      if(text.includes('ลาพักร้อน') || text.includes('ลาพักผ่อน')){ matchedType = 'vacation'; matchedTitle = ev.summary || ''; break; }
-      if(text.includes('ลากิจ')){ matchedType = 'personal'; matchedTitle = ev.summary || ''; break; }
-      if(/ป่วย/.test(text)){ matchedType = 'sick'; matchedTitle = ev.summary || ''; break; }
-      if(/พักร้อน|พักผ่อน/.test(text)){ matchedType = 'vacation'; matchedTitle = ev.summary || ''; break; }
-      if(/กิจ/.test(text)){ matchedType = 'personal'; matchedTitle = ev.summary || ''; break; }
+    amoGcalEvents = events;
+
+    if(events.length === 0){
+      eventsWrap.style.display = 'none';
+      eventsSel.innerHTML = '';
+      statusEl.className = 'status ok';
+      statusEl.textContent = 'ตรวจสอบปฏิทินแล้ว ไม่พบอีเวนต์ในวันที่เลือกเลย';
+      return;
     }
-    if(matchedType){
-      document.getElementById('amo-kind-leave').checked = true;
-      document.getElementById('amo-leave-type').value = matchedType;
-      updateAmoKindUI();
-      const nickname = extractAmoNickname(document.getElementById('amo-project').value);
-      const suggested = matchedTitle ? `${d}-${nickname} ${matchedTitle}` : `${d}-${nickname} ทั้งวัน`;
-      document.getElementById('amo-leave-detail').value = suggested;
-      amoLastAutoDetail = suggested;
-      statusEl.className = 'status ok';
-      statusEl.textContent = 'พบอีเวนต์ "' + (matchedTitle || 'ลา') + '" ในปฏิทินวันนี้ → สลับเป็นโหมด "ลา" ให้แล้ว';
+
+    eventsWrap.style.display = 'block';
+    eventsSel.innerHTML = '<option value="none">ไม่ใช่วันลา / ทำงานปกติ</option>' +
+      events.map((ev,i) => `<option value="${i}">${escapeHtml(ev.summary || '(ไม่มีชื่ออีเวนต์)')}</option>`).join('');
+
+    let matchedIndex = -1;
+    for(let i=0; i<events.length; i++){
+      const text = (events[i].summary || '') + ' ' + (events[i].description || '');
+      if(guessAmoLeaveType(text)){ matchedIndex = i; break; }
+    }
+    if(matchedIndex >= 0){
+      eventsSel.value = String(matchedIndex);
+      applyAmoEventSelection(String(matchedIndex));
     }else{
+      eventsSel.value = 'none';
       statusEl.className = 'status ok';
-      statusEl.textContent = 'ตรวจสอบปฏิทินแล้ว ไม่พบอีเวนต์การลาในวันที่เลือก (' + events.length + ' อีเวนต์)';
+      statusEl.textContent = 'พบ ' + events.length + ' อีเวนต์ในวันนี้ แต่ไม่มีคำที่เข้าข่ายวันลา — เลือกจากลิสต์ด้านล่างเองได้ถ้าต้องการ';
     }
   }catch(err){
     statusEl.className = 'status err';
@@ -1620,6 +1705,84 @@ document.getElementById('amo-clear').addEventListener('click', ()=>{
   document.getElementById('amo-link-output').innerHTML = '';
   document.getElementById('amo-status').className = 'status';
   document.getElementById('amo-status').textContent = '';
+});
+
+// ---- Prompt Builder ----
+let pbStepCount = 0;
+function pbAddStep(value){
+  const idx = pbStepCount++;
+  const row = document.createElement('div');
+  row.className = 'holiday-row';
+  row.dataset.idx = idx;
+  row.innerHTML = `
+    <input type="text" class="pb-step-text" style="flex:1;padding:6px;border:1px solid var(--line);border-radius:6px;" placeholder="เช่น อ่านโครงสร้างจากไฟล์ต้นฉบับก่อน" value="${value ? escapeHtml(value) : ''}">
+    <button type="button" class="pb-step-remove">ลบ</button>
+  `;
+  row.querySelector('.pb-step-remove').addEventListener('click', ()=> row.remove());
+  document.getElementById('pb-steps-list').appendChild(row);
+}
+document.getElementById('pb-add-step').addEventListener('click', ()=> pbAddStep());
+pbAddStep();
+
+function pbGetSteps(){
+  const steps = [];
+  document.querySelectorAll('#pb-steps-list .holiday-row').forEach(row=>{
+    const v = row.querySelector('.pb-step-text').value.trim();
+    if(v) steps.push(v);
+  });
+  return steps;
+}
+
+document.getElementById('pb-generate').addEventListener('click', ()=>{
+  const role = document.getElementById('pb-role').value.trim();
+  const context = document.getElementById('pb-context').value.trim();
+  const goal = document.getElementById('pb-goal').value.trim();
+  const steps = pbGetSteps();
+  const format = document.getElementById('pb-format').value.trim();
+  const constraints = document.getElementById('pb-constraints').value.trim();
+  const statusEl = document.getElementById('pb-status');
+
+  if(!context && !goal){
+    statusEl.className = 'status err';
+    statusEl.textContent = 'กรุณากรอกอย่างน้อย "บริบท" หรือ "เป้าหมาย" ก่อน';
+    return;
+  }
+
+  const parts = [];
+  if(role) parts.push('บทบาท: ' + role);
+  if(context) parts.push('บริบท: ' + context);
+  if(goal) parts.push('เป้าหมาย: ' + goal);
+  if(steps.length){
+    parts.push('ขั้นตอน:\n' + steps.map((s,i) => (i+1) + '. ' + s).join('\n'));
+  }
+  if(format) parts.push('รูปแบบผลลัพธ์: ' + format);
+  if(constraints) parts.push('ข้อจำกัด/สิ่งที่ต้องระวัง: ' + constraints);
+
+  document.getElementById('pb-output').value = parts.join('\n\n');
+  statusEl.className = 'status ok';
+  statusEl.textContent = 'จัดระเบียบพรอมต์เรียบร้อย — ตรวจสอบแล้วคัดลอกไปใช้ได้เลย';
+});
+
+document.getElementById('pb-copy').addEventListener('click', ()=>{
+  const text = document.getElementById('pb-output').value;
+  const statusEl = document.getElementById('pb-status');
+  if(!text){ statusEl.className = 'status err'; statusEl.textContent = 'กรุณาจัดระเบียบพรอมต์ก่อน'; return; }
+  copyToClipboard(text)
+    .then(()=>{ statusEl.className = 'status ok'; statusEl.textContent = 'คัดลอกพรอมต์แล้ว'; })
+    .catch(err => { statusEl.className = 'status err'; statusEl.textContent = 'คัดลอกไม่สำเร็จ: ' + err.message; });
+});
+
+document.getElementById('pb-clear').addEventListener('click', ()=>{
+  document.getElementById('pb-role').value = '';
+  document.getElementById('pb-context').value = '';
+  document.getElementById('pb-goal').value = '';
+  document.getElementById('pb-format').value = '';
+  document.getElementById('pb-constraints').value = '';
+  document.getElementById('pb-steps-list').innerHTML = '';
+  pbAddStep();
+  document.getElementById('pb-output').value = '';
+  document.getElementById('pb-status').className = 'status';
+  document.getElementById('pb-status').textContent = '';
 });
 
 // ---- Text counter ----
