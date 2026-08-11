@@ -85,6 +85,7 @@
     <button class="tab active" data-tab="amo-report">Check in</button>
     <button class="tab" data-tab="json-excel">JSON ↔ Excel</button>
     <button class="tab" data-tab="csv-excel">CSV ↔ Excel</button>
+    <button class="tab" data-tab="sql-generator">SQL Generator</button>
     <button class="tab" data-tab="mask-data">Binding/Mask ข้อมูล</button>
     <button class="tab" data-tab="base64-image">Base64 ↔ Image</button>
     <button class="tab" data-tab="timesheet">Timesheet</button>
@@ -397,6 +398,64 @@
           <button class="secondary" id="pb-copy">คัดลอกพรอมต์</button>
         </div>
         <div class="status" id="pb-status"></div>
+      </div>
+    </section>
+
+    <section id="sql-generator">
+      <h2>สร้าง SQL Script จากไฟล์ Excel</h2>
+      <p class="desc">อัปโหลดไฟล์ Excel เลือกคอลัมน์ที่จะ UPDATE/INSERT และเงื่อนไข WHERE ระบบจะสร้างสคริปต์ SQL ให้ทีละแถวอัตโนมัติ</p>
+
+      <h3 class="sub">1. อัปโหลดไฟล์ข้อมูล</h3>
+      <div class="card">
+        <div class="drop" id="sql-drop">ลากไฟล์ .xlsx/.xls มาวาง หรือคลิกเพื่อเลือกไฟล์</div>
+        <input type="file" id="sql-file" accept=".xlsx,.xls">
+        <div class="filename" id="sql-filename"></div>
+        <div id="sql-preview" style="margin-top:14px;"></div>
+      </div>
+
+      <h3 class="sub">2. ตั้งค่าสคริปต์</h3>
+      <div class="card">
+        <div class="ts-grid">
+          <div class="ts-field"><label>ชื่อตาราง (Table name)</label><input type="text" id="sql-table" placeholder="เช่น employees"></div>
+          <div class="ts-field"><label>ประเภทสคริปต์</label>
+            <select id="sql-type">
+              <option value="update">UPDATE</option>
+              <option value="insert">INSERT</option>
+              <option value="delete">DELETE</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="sql-set-section" style="margin-top:18px;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:8px;">เลือกคอลัมน์ที่จะ SET (อัปเดตค่า)</label>
+          <div id="sql-set-columns" style="font-size:13px;"></div>
+        </div>
+
+        <div id="sql-where-section" style="margin-top:18px;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:8px;">เลือกคอลัมน์ที่ใช้เป็นเงื่อนไข WHERE (เลือกได้หลายคอลัมน์ เชื่อมด้วย AND)</label>
+          <div id="sql-where-columns" style="font-size:13px;"></div>
+        </div>
+
+        <div id="sql-insert-options" style="display:none;margin-top:18px;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:8px;">เลือกคอลัมน์ที่จะ INSERT</label>
+          <div id="sql-insert-columns" style="font-size:13px;"></div>
+        </div>
+
+        <div class="btn-row" style="margin-top:18px;">
+          <button class="primary" id="sql-generate">สร้าง SQL Script</button>
+          <button class="secondary" id="sql-clear">ล้างข้อมูล</button>
+        </div>
+        <div class="status" id="sql-status"></div>
+      </div>
+
+      <h3 class="sub">3. ผลลัพธ์</h3>
+      <div class="card">
+        <textarea id="sql-output" readonly style="min-height:260px;font-family:ui-monospace,Consolas,monospace;font-size:12px;" placeholder="สคริปต์ SQL ที่สร้างแล้วจะแสดงตรงนี้"></textarea>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="secondary" id="sql-copy">คัดลอก SQL</button>
+          <button class="secondary" id="sql-download">ดาวน์โหลด .sql</button>
+        </div>
+        <div class="status" id="sql-output-status"></div>
       </div>
     </section>
 
@@ -881,25 +940,28 @@ document.getElementById('mask-preview').addEventListener('click', ()=>{
 });
 
 function copyToClipboard(text){
-  if(navigator.clipboard && window.isSecureContext){
-    return navigator.clipboard.writeText(text);
+  function execCommandFallback(){
+    return new Promise((resolve, reject)=>{
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      try{
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if(ok) resolve(); else reject(new Error('execCommand copy returned false'));
+      }catch(err){
+        document.body.removeChild(ta);
+        reject(err);
+      }
+    });
   }
-  return new Promise((resolve, reject)=>{
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus(); ta.select();
-    try{
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      resolve();
-    }catch(err){
-      document.body.removeChild(ta);
-      reject(err);
-    }
-  });
+  if(navigator.clipboard && window.isSecureContext){
+    return navigator.clipboard.writeText(text).catch(()=> execCommandFallback());
+  }
+  return execCommandFallback();
 }
 
 document.getElementById('mask-copy').addEventListener('click', ()=>{
@@ -1564,6 +1626,8 @@ const AMO_ENTRY = {
   personal: '397833300',
   other: '1958782618'
 };
+let amoInitialToday = null;
+
 (function initAmoForm(){
   const projectInput = document.getElementById('amo-project');
   let saved = null;
@@ -1572,10 +1636,40 @@ const AMO_ENTRY = {
   else projectInput.value = 'PR9 (1 ท่าน) (แพรว)';
 
   const today = new Date();
-  document.getElementById('amo-day').value = today.getDate();
-  document.getElementById('amo-month').value = today.getMonth()+1;
-  document.getElementById('amo-year').value = today.getFullYear();
+  amoInitialToday = { d: today.getDate(), m: today.getMonth()+1, y: today.getFullYear() };
+  document.getElementById('amo-day').value = amoInitialToday.d;
+  document.getElementById('amo-month').value = amoInitialToday.m;
+  document.getElementById('amo-year').value = amoInitialToday.y;
 })();
+
+function amoRefreshDateIfStale(){
+  if(!amoInitialToday) return;
+  const now = new Date();
+  const nowD = now.getDate(), nowM = now.getMonth()+1, nowY = now.getFullYear();
+  if(nowD === amoInitialToday.d && nowM === amoInitialToday.m && nowY === amoInitialToday.y) return;
+
+  const dayEl = document.getElementById('amo-day');
+  const monthEl = document.getElementById('amo-month');
+  const yearEl = document.getElementById('amo-year');
+  const stillDefault =
+    parseInt(dayEl.value, 10) === amoInitialToday.d &&
+    parseInt(monthEl.value, 10) === amoInitialToday.m &&
+    parseInt(yearEl.value, 10) === amoInitialToday.y;
+
+  if(stillDefault){
+    dayEl.value = nowD;
+    monthEl.value = nowM;
+    yearEl.value = nowY;
+    amoInitialToday = { d: nowD, m: nowM, y: nowY };
+    updateAmoDayType();
+    updateAmoLeaveDetailDefault();
+    debouncedCheckAmoCalendar();
+    const statusEl = document.getElementById('amo-daytype');
+    if(statusEl) statusEl.innerHTML += '<br><span style="color:var(--accent);">(อัปเดตวันที่เป็นวันนี้ให้อัตโนมัติ เนื่องจากเปิดหน้านี้ค้างไว้ข้ามวัน)</span>';
+  }
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) amoRefreshDateIfStale(); });
+window.addEventListener('focus', amoRefreshDateIfStale);
 
 function formatAmoDMY(d,m,y){
   return `${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`;
@@ -1782,6 +1876,170 @@ document.getElementById('pb-clear').addEventListener('click', ()=>{
   document.getElementById('pb-output').value = '';
   document.getElementById('pb-status').className = 'status';
   document.getElementById('pb-status').textContent = '';
+});
+
+// ---- SQL Script Generator ----
+const sqlDrop = document.getElementById('sql-drop');
+const sqlFile = document.getElementById('sql-file');
+const sqlFilenameEl = document.getElementById('sql-filename');
+let sqlWorkbook = null;
+let sqlData = null;
+let sqlColumns = [];
+
+sqlDrop.addEventListener('click', ()=> sqlFile.click());
+sqlDrop.addEventListener('dragover', e=>{e.preventDefault(); sqlDrop.classList.add('drag');});
+sqlDrop.addEventListener('dragleave', ()=> sqlDrop.classList.remove('drag'));
+sqlDrop.addEventListener('drop', e=>{
+  e.preventDefault(); sqlDrop.classList.remove('drag');
+  if(e.dataTransfer.files[0]) loadSqlFile(e.dataTransfer.files[0]);
+});
+sqlFile.addEventListener('change', e=>{ if(e.target.files[0]) loadSqlFile(e.target.files[0]); });
+
+function loadSqlFile(file){
+  sqlFilenameEl.textContent = 'ไฟล์: ' + file.name;
+  sqlWorkbook = null; sqlData = null; sqlColumns = [];
+  document.getElementById('sql-preview').innerHTML = '';
+  const statusEl = document.getElementById('sql-status');
+  statusEl.className = 'status'; statusEl.textContent = '';
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try{
+      sqlWorkbook = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
+      const sheet = sqlWorkbook.Sheets[sqlWorkbook.SheetNames[0]];
+      sqlData = XLSX.utils.sheet_to_json(sheet, {defval:''});
+      const seen = new Set();
+      sqlColumns = [];
+      sqlData.slice(0,200).forEach(r => Object.keys(r).forEach(k=>{ if(!seen.has(k)){ seen.add(k); sqlColumns.push(k); } }));
+      renderPreviewTable(document.getElementById('sql-preview'), sqlData);
+      sqlPopulateColumnCheckboxes('sql-set-columns', sqlColumns, 'set');
+      sqlPopulateColumnCheckboxes('sql-where-columns', sqlColumns, 'where');
+      sqlPopulateColumnCheckboxes('sql-insert-columns', sqlColumns, 'insert');
+      statusEl.className = 'status ok';
+      statusEl.textContent = 'โหลดไฟล์สำเร็จ พบ ' + sqlData.length + ' แถว, ' + sqlColumns.length + ' คอลัมน์ — เลือกคอลัมน์ด้านล่างแล้วกดสร้างสคริปต์';
+    }catch(err){
+      statusEl.className = 'status err';
+      statusEl.textContent = 'อ่านไฟล์ไม่สำเร็จ: ' + err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function sqlPopulateColumnCheckboxes(containerId, columns, prefix){
+  const container = document.getElementById(containerId);
+  const selectAllHtml = `<label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;font-weight:600;">
+      <input type="checkbox" id="sql-${prefix}-select-all"> เลือกทั้งหมด
+    </label>`;
+  const colsHtml = columns.map(col =>
+    `<label style="display:inline-flex;align-items:center;gap:6px;margin:4px 14px 4px 0;">
+      <input type="checkbox" class="sql-${prefix}-col" value="${escapeHtml(col)}"> ${escapeHtml(col)}
+    </label>`
+  ).join('');
+  container.innerHTML = selectAllHtml + '<div>' + colsHtml + '</div>';
+
+  const selectAllCb = document.getElementById(`sql-${prefix}-select-all`);
+  const colCbs = container.querySelectorAll(`.sql-${prefix}-col`);
+  selectAllCb.addEventListener('change', ()=>{
+    colCbs.forEach(cb => cb.checked = selectAllCb.checked);
+  });
+  colCbs.forEach(cb => cb.addEventListener('change', ()=>{
+    selectAllCb.checked = [...colCbs].every(c => c.checked);
+  }));
+}
+
+document.getElementById('sql-type').addEventListener('change', ()=>{
+  const type = document.getElementById('sql-type').value;
+  document.getElementById('sql-set-section').style.display = type === 'update' ? 'block' : 'none';
+  document.getElementById('sql-where-section').style.display = (type === 'update' || type === 'delete') ? 'block' : 'none';
+  document.getElementById('sql-insert-options').style.display = type === 'insert' ? 'block' : 'none';
+});
+
+function sqlEscapeValue(v){
+  if(v === null || v === undefined || v === '') return 'NULL';
+  if(typeof v === 'number') return String(v);
+  if(typeof v === 'boolean') return v ? '1' : '0';
+  return "'" + String(v).replace(/'/g, "''") + "'";
+}
+
+document.getElementById('sql-generate').addEventListener('click', ()=>{
+  const statusEl = document.getElementById('sql-status');
+  if(!sqlData || sqlData.length === 0){
+    statusEl.className = 'status err'; statusEl.textContent = 'กรุณาอัปโหลดไฟล์ Excel ก่อน'; return;
+  }
+  const table = document.getElementById('sql-table').value.trim();
+  if(!table){
+    statusEl.className = 'status err'; statusEl.textContent = 'กรุณาระบุชื่อตาราง'; return;
+  }
+  const type = document.getElementById('sql-type').value;
+  const lines = [];
+
+  if(type === 'update'){
+    const setCols = [...document.querySelectorAll('.sql-set-col:checked')].map(cb => cb.value);
+    const whereCols = [...document.querySelectorAll('.sql-where-col:checked')].map(cb => cb.value);
+    if(setCols.length === 0){ statusEl.className = 'status err'; statusEl.textContent = 'เลือกคอลัมน์ที่จะ SET อย่างน้อย 1 คอลัมน์'; return; }
+    if(whereCols.length === 0){ statusEl.className = 'status err'; statusEl.textContent = 'เลือกคอลัมน์ WHERE อย่างน้อย 1 คอลัมน์'; return; }
+    sqlData.forEach(row=>{
+      const setClause = setCols.map(c => c + ' = ' + sqlEscapeValue(row[c])).join(', ');
+      const whereClause = whereCols.map(c => c + ' = ' + sqlEscapeValue(row[c])).join(' AND ');
+      lines.push(`UPDATE ${table} SET ${setClause} WHERE ${whereClause};`);
+    });
+  }else if(type === 'delete'){
+    const whereCols = [...document.querySelectorAll('.sql-where-col:checked')].map(cb => cb.value);
+    if(whereCols.length === 0){ statusEl.className = 'status err'; statusEl.textContent = 'เลือกคอลัมน์ WHERE อย่างน้อย 1 คอลัมน์'; return; }
+    sqlData.forEach(row=>{
+      const whereClause = whereCols.map(c => c + ' = ' + sqlEscapeValue(row[c])).join(' AND ');
+      lines.push(`DELETE FROM ${table} WHERE ${whereClause};`);
+    });
+  }else{
+    const insertCols = [...document.querySelectorAll('.sql-insert-col:checked')].map(cb => cb.value);
+    if(insertCols.length === 0){ statusEl.className = 'status err'; statusEl.textContent = 'เลือกคอลัมน์ที่จะ INSERT อย่างน้อย 1 คอลัมน์'; return; }
+    sqlData.forEach(row=>{
+      const values = insertCols.map(c => sqlEscapeValue(row[c])).join(', ');
+      lines.push(`INSERT INTO ${table} (${insertCols.join(', ')}) VALUES (${values});`);
+    });
+  }
+
+  document.getElementById('sql-output').value = lines.join('\n');
+  statusEl.className = 'status ok';
+  statusEl.textContent = 'สร้างสคริปต์สำเร็จ ' + lines.length + ' คำสั่ง — ตรวจสอบผลลัพธ์ด้านล่างก่อนนำไปใช้';
+});
+
+document.getElementById('sql-copy').addEventListener('click', ()=>{
+  const text = document.getElementById('sql-output').value;
+  const statusEl = document.getElementById('sql-output-status');
+  if(!text){ statusEl.className = 'status err'; statusEl.textContent = 'กรุณาสร้างสคริปต์ก่อน'; return; }
+  copyToClipboard(text)
+    .then(()=>{ statusEl.className = 'status ok'; statusEl.textContent = 'คัดลอกสคริปต์แล้ว'; })
+    .catch(err => { statusEl.className = 'status err'; statusEl.textContent = 'คัดลอกไม่สำเร็จ: ' + err.message; });
+});
+
+document.getElementById('sql-download').addEventListener('click', ()=>{
+  const text = document.getElementById('sql-output').value;
+  const statusEl = document.getElementById('sql-output-status');
+  if(!text){ statusEl.className = 'status err'; statusEl.textContent = 'กรุณาสร้างสคริปต์ก่อน'; return; }
+  const table = document.getElementById('sql-table').value.trim() || 'script';
+  const blob = new Blob([text], {type:'text/plain;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = table + '.sql';
+  a.click();
+  statusEl.className = 'status ok';
+  statusEl.textContent = 'ดาวน์โหลด ' + table + '.sql แล้ว';
+});
+
+document.getElementById('sql-clear').addEventListener('click', ()=>{
+  sqlFile.value = '';
+  sqlFilenameEl.textContent = '';
+  sqlWorkbook = null; sqlData = null; sqlColumns = [];
+  document.getElementById('sql-preview').innerHTML = '';
+  document.getElementById('sql-set-columns').innerHTML = '';
+  document.getElementById('sql-where-columns').innerHTML = '';
+  document.getElementById('sql-insert-columns').innerHTML = '';
+  document.getElementById('sql-table').value = '';
+  document.getElementById('sql-output').value = '';
+  document.getElementById('sql-status').className = 'status';
+  document.getElementById('sql-status').textContent = '';
+  document.getElementById('sql-output-status').className = 'status';
+  document.getElementById('sql-output-status').textContent = '';
 });
 
 // ---- Text counter ----
