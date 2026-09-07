@@ -85,6 +85,7 @@
     <button class="tab active" data-tab="amo-report">Check in</button>
     <button class="tab" data-tab="json-excel">JSON ↔ Excel</button>
     <button class="tab" data-tab="csv-excel">CSV ↔ Excel</button>
+    <button class="tab" data-tab="map-code">Map Code</button>
     <button class="tab" data-tab="sql-generator">SQL Generator</button>
     <button class="tab" data-tab="mask-data">Binding/Mask ข้อมูล</button>
     <button class="tab" data-tab="base64-image">Base64 ↔ Image</button>
@@ -192,6 +193,56 @@
         <div class="status" id="mask-status"></div>
         <pre id="mask-output" style="display:none;margin-top:16px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px;font-size:12px;max-height:320px;overflow:auto;"></pre>
         <button class="secondary" id="mask-copy" style="display:none;">คัดลอกไปคลิปบอร์ด</button>
+      </div>
+    </section>
+
+    <section id="map-code">
+      <h2>Map Code (ดึงข้อมูลข้าม Sheet)</h2>
+      <p class="desc">อัปโหลดไฟล์ Excel ที่มี 2 ชีต แล้วให้ระบบ match ด้วยคอลัมน์ code (เช่น NewCode = Code) จากนั้นดึงคอลัมน์จากชีตต้นทางมาเติมในชีตปลายทางให้อัตโนมัติ เหมือน VLOOKUP แต่กดปุ่มเดียวจบ แล้วดาวน์โหลดไฟล์ที่เติมครบ</p>
+
+      <div class="card">
+        <div class="drop" id="mc-drop">ลากไฟล์ .xlsx/.xls มาวาง หรือคลิกเพื่อเลือกไฟล์</div>
+        <input type="file" id="mc-file" accept=".xlsx,.xls">
+        <div class="filename" id="mc-filename"></div>
+
+        <div id="mc-config" style="display:none;margin-top:20px;">
+          <div class="ts-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div class="ts-field">
+              <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:4px;">ชีตปลายทาง (ที่จะเติมข้อมูล)</label>
+              <select id="mc-target-sheet" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:14px;"></select>
+            </div>
+            <div class="ts-field">
+              <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:4px;">ชีตต้นทาง (ที่มีข้อมูลต้นฉบับ)</label>
+              <select id="mc-source-sheet" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:14px;"></select>
+            </div>
+            <div class="ts-field">
+              <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:4px;">คอลัมน์ key ฝั่งปลายทาง (เช่น NewCode)</label>
+              <select id="mc-target-key" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:14px;"></select>
+            </div>
+            <div class="ts-field">
+              <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:4px;">คอลัมน์ key ฝั่งต้นทาง (เช่น Code)</label>
+              <select id="mc-source-key" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:14px;"></select>
+            </div>
+          </div>
+
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:14px;color:var(--muted);">
+            <input type="checkbox" id="mc-ci" checked> ไม่สนตัวพิมพ์เล็ก/ใหญ่ และตัดช่องว่างหน้า-หลังตอนเทียบ code
+          </label>
+
+          <div style="margin-top:16px;">
+            <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:6px;">เลือกคอลัมน์ที่จะดึงจากต้นทางมาเติม (ค่าเริ่มต้น: คอลัมน์ที่ชื่อตรงกันทั้งสองชีต)</label>
+            <div id="mc-cols" style="display:flex;flex-wrap:wrap;gap:10px 18px;padding:12px;border:1px solid var(--line);border-radius:8px;"></div>
+          </div>
+
+          <div class="btn-row">
+            <button class="primary" id="mc-run">ดึงข้อมูล (Map)</button>
+            <button class="secondary" id="mc-clear">ล้างข้อมูล</button>
+          </div>
+        </div>
+
+        <div id="mc-preview" style="margin-top:16px;"></div>
+        <button class="primary" id="mc-download" style="display:none;">ดาวน์โหลด .xlsx</button>
+        <div class="status" id="mc-status"></div>
       </div>
     </section>
 
@@ -2060,6 +2111,173 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
   document.getElementById('c-words').textContent = '0';
   document.getElementById('c-lines').textContent = '0';
 });
+
+// ---- Map Code ----
+(function(){
+  const drop = document.getElementById('mc-drop');
+  const fileInput = document.getElementById('mc-file');
+  const filenameEl = document.getElementById('mc-filename');
+  const config = document.getElementById('mc-config');
+  const targetSel = document.getElementById('mc-target-sheet');
+  const sourceSel = document.getElementById('mc-source-sheet');
+  const targetKeySel = document.getElementById('mc-target-key');
+  const sourceKeySel = document.getElementById('mc-source-key');
+  const ciChk = document.getElementById('mc-ci');
+  const colsBox = document.getElementById('mc-cols');
+  const runBtn = document.getElementById('mc-run');
+  const clearBtn = document.getElementById('mc-clear');
+  const preview = document.getElementById('mc-preview');
+  const dlBtn = document.getElementById('mc-download');
+  const status = document.getElementById('mc-status');
+
+  let workbook = null;
+  let resultRows = null, resultHeaders = null, resultSheetName = null, srcFileName = 'mapped';
+
+  function setStatus(msg, cls){ status.textContent = msg || ''; status.className = 'status' + (cls ? ' ' + cls : ''); }
+
+  function headersOf(sheetName){
+    const ws = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+    return (rows[0] || []).map(h => String(h).trim()).filter(h => h !== '');
+  }
+  function rowsOf(sheetName){
+    return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {defval:''});
+  }
+  function fillSelect(sel, items, pick){
+    sel.innerHTML = items.map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('');
+    if(pick && items.includes(pick)) sel.value = pick;
+  }
+  // เดาคอลัมน์ key จากชื่อ
+  function guessKey(headers, prefer){
+    for(const p of prefer){
+      const hit = headers.find(h => h.toLowerCase() === p);
+      if(hit) return hit;
+    }
+    for(const p of prefer){
+      const hit = headers.find(h => h.toLowerCase().includes(p));
+      if(hit) return hit;
+    }
+    return headers[0];
+  }
+
+  function refreshKeys(){
+    const tHeaders = headersOf(targetSel.value);
+    const sHeaders = headersOf(sourceSel.value);
+    fillSelect(targetKeySel, tHeaders, guessKey(tHeaders, ['newcode','code']));
+    fillSelect(sourceKeySel, sHeaders, guessKey(sHeaders, ['code']));
+    refreshCols();
+  }
+
+  function refreshCols(){
+    const tHeaders = headersOf(targetSel.value);
+    const sHeaders = headersOf(sourceSel.value);
+    const tKey = targetKeySel.value, sKey = sourceKeySel.value;
+    // คอลัมน์ที่จะดึง = คอลัมน์ต้นทาง (ไม่รวม key) ; ติ๊กเริ่มต้นเฉพาะตัวที่ปลายทางมีชื่อตรงกัน
+    const candidates = sHeaders.filter(h => h !== sKey);
+    colsBox.innerHTML = candidates.map(h => {
+      const inTarget = tHeaders.includes(h);
+      return `<label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+        <input type="checkbox" class="mc-col" value="${escapeHtml(h)}" ${inTarget ? 'checked' : ''}>
+        ${escapeHtml(h)}${inTarget ? '' : ' <span style="color:var(--muted);font-size:11px;">(ปลายทางยังไม่มี — จะเพิ่มคอลัมน์ให้)</span>'}
+      </label>`;
+    }).join('') || '<span style="color:var(--muted);font-size:13px;">ไม่พบคอลัมน์อื่นในชีตต้นทาง</span>';
+  }
+
+  function loadFile(file){
+    srcFileName = file.name.replace(/\.(xlsx|xls)$/i,'');
+    filenameEl.textContent = 'ไฟล์: ' + file.name;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try{
+        workbook = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
+        const names = workbook.SheetNames;
+        if(names.length < 2){ setStatus('ไฟล์นี้มีชีตเดียว — Map Code ต้องมีอย่างน้อย 2 ชีต', 'err'); return; }
+        fillSelect(targetSel, names, names[0]);
+        fillSelect(sourceSel, names, names[1]);
+        refreshKeys();
+        config.style.display = 'block';
+        preview.innerHTML = ''; dlBtn.style.display = 'none';
+        setStatus('โหลดไฟล์แล้ว — ตั้งค่าแล้วกด "ดึงข้อมูล (Map)"', 'ok');
+      }catch(err){ setStatus('อ่านไฟล์ไม่สำเร็จ: ' + err.message, 'err'); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function norm(v, ci){
+    let s = (v === undefined || v === null) ? '' : String(v);
+    if(ci){ s = s.trim().toLowerCase(); }
+    return s;
+  }
+
+  function run(){
+    if(!workbook) return;
+    const tKey = targetKeySel.value, sKey = sourceKeySel.value;
+    const ci = ciChk.checked;
+    const pickCols = Array.from(document.querySelectorAll('.mc-col:checked')).map(c => c.value);
+    if(pickCols.length === 0){ setStatus('ยังไม่ได้เลือกคอลัมน์ที่จะดึง', 'err'); return; }
+
+    const targetRows = rowsOf(targetSel.value);
+    const sourceRows = rowsOf(sourceSel.value);
+
+    // สร้าง lookup map จากต้นทาง
+    const map = new Map();
+    sourceRows.forEach(r => {
+      const k = norm(r[sKey], ci);
+      if(k !== '' && !map.has(k)) map.set(k, r);
+    });
+
+    // header ปลายทาง + คอลัมน์ใหม่ที่ยังไม่มี
+    const tHeaders = headersOf(targetSel.value).slice();
+    pickCols.forEach(c => { if(!tHeaders.includes(c)) tHeaders.push(c); });
+
+    let matched = 0, unmatched = 0;
+    const filled = targetRows.map(row => {
+      const out = Object.assign({}, row);
+      tHeaders.forEach(h => { if(!(h in out)) out[h] = ''; });
+      const k = norm(row[tKey], ci);
+      const found = k !== '' ? map.get(k) : null;
+      if(found){ matched++; pickCols.forEach(c => { out[c] = found[c] !== undefined ? found[c] : ''; }); }
+      else { unmatched++; }
+      return out;
+    });
+
+    resultRows = filled; resultHeaders = tHeaders; resultSheetName = targetSel.value;
+    renderPreviewTable(preview, filled, 50);
+    dlBtn.style.display = 'inline-block';
+    setStatus(`เสร็จแล้ว — จับคู่ได้ ${matched} แถว, ไม่พบใน "${sourceSel.value}" ${unmatched} แถว`, unmatched ? '' : 'ok');
+  }
+
+  function download(){
+    if(!resultRows) return;
+    const outWb = XLSX.utils.book_new();
+    workbook.SheetNames.forEach(name => {
+      if(name === resultSheetName){
+        const ws = XLSX.utils.json_to_sheet(resultRows, {header: resultHeaders});
+        XLSX.utils.book_append_sheet(outWb, ws, name);
+      } else {
+        XLSX.utils.book_append_sheet(outWb, workbook.Sheets[name], name);
+      }
+    });
+    downloadWorkbook(outWb, srcFileName + '-mapped.xlsx');
+  }
+
+  drop.addEventListener('click', ()=> fileInput.click());
+  drop.addEventListener('dragover', e=>{ e.preventDefault(); drop.classList.add('drag'); });
+  drop.addEventListener('dragleave', ()=> drop.classList.remove('drag'));
+  drop.addEventListener('drop', e=>{ e.preventDefault(); drop.classList.remove('drag'); if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+  fileInput.addEventListener('change', e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
+  targetSel.addEventListener('change', refreshKeys);
+  sourceSel.addEventListener('change', refreshKeys);
+  targetKeySel.addEventListener('change', refreshCols);
+  sourceKeySel.addEventListener('change', refreshCols);
+  runBtn.addEventListener('click', run);
+  dlBtn.addEventListener('click', download);
+  clearBtn.addEventListener('click', ()=>{
+    workbook = null; resultRows = null; fileInput.value = '';
+    filenameEl.textContent = ''; config.style.display = 'none';
+    preview.innerHTML = ''; dlBtn.style.display = 'none'; setStatus('');
+  });
+})();
 </script>
 </body>
 </html>
