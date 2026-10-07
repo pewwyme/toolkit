@@ -55,6 +55,10 @@
   .holiday-row select{width:110px;padding:6px;border:1px solid var(--line);border-radius:6px;}
   .holiday-row input[type=text]{flex:1;padding:6px;border:1px solid var(--line);border-radius:6px;}
   .holiday-row button{background:transparent;border:1px solid var(--line);border-radius:6px;padding:6px 10px;color:var(--danger);cursor:pointer;font-size:12px;}
+  .mc-key-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .mc-key-row select{flex:1;min-width:0;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;}
+  .mc-key-row .mc-eq{color:var(--muted);flex-shrink:0;}
+  .mc-key-row button{flex-shrink:0;background:transparent;border:1px solid var(--line);border-radius:6px;padding:6px 10px;color:var(--danger);cursor:pointer;font-size:12px;}
 
   @media (max-width: 900px){
     .app{flex-direction:column;min-height:auto;}
@@ -198,7 +202,7 @@
 
     <section id="map-code">
       <h2>Map Code (ดึงข้อมูลข้าม Sheet)</h2>
-      <p class="desc">อัปโหลดไฟล์ Excel ที่มี 2 ชีต แล้วให้ระบบ match ด้วยคอลัมน์ code (เช่น NewCode = Code) จากนั้นดึงคอลัมน์จากชีตต้นทางมาเติมในชีตปลายทางให้อัตโนมัติ เหมือน VLOOKUP แต่กดปุ่มเดียวจบ แล้วดาวน์โหลดไฟล์ที่เติมครบ</p>
+      <p class="desc">อัปโหลดไฟล์ Excel ที่มี 2 ชีต แล้วให้ระบบ match ด้วยคอลัมน์ code (เช่น NewCode = Code หรือหลายคู่พร้อมกัน เช่น maincode = maincode และ subcode = subcode) จากนั้นดึงคอลัมน์จากชีตต้นทางมาเติมในชีตปลายทางให้อัตโนมัติ เหมือน VLOOKUP แต่กดปุ่มเดียวจบ แล้วดาวน์โหลดไฟล์ที่เติมครบ</p>
 
       <div class="card">
         <div class="drop" id="mc-drop">ลากไฟล์ .xlsx/.xls มาวาง หรือคลิกเพื่อเลือกไฟล์</div>
@@ -215,14 +219,12 @@
               <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:4px;">ชีตต้นทาง (ที่มีข้อมูลต้นฉบับ)</label>
               <select id="mc-source-sheet" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:14px;"></select>
             </div>
-            <div class="ts-field">
-              <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:4px;">คอลัมน์ key ฝั่งปลายทาง (เช่น NewCode)</label>
-              <select id="mc-target-key" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:14px;"></select>
-            </div>
-            <div class="ts-field">
-              <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:4px;">คอลัมน์ key ฝั่งต้นทาง (เช่น Code)</label>
-              <select id="mc-source-key" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;font-size:14px;"></select>
-            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:6px;">คู่คอลัมน์ key (ปลายทาง = ต้นทาง) — ทุกคู่ต้องตรงกันถึงจะนับว่าจับคู่ได้ เช่น maincode = maincode และ subcode = subcode</label>
+            <div id="mc-keys"></div>
+            <button class="secondary" id="mc-add-key" type="button" style="margin-top:4px;">+ เพิ่มคู่ key</button>
           </div>
 
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:14px;color:var(--muted);">
@@ -2112,7 +2114,7 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
   document.getElementById('c-lines').textContent = '0';
 });
 
-// ---- Map Code ----
+// ---- Map Code (รองรับหลาย key) ----
 (function(){
   const drop = document.getElementById('mc-drop');
   const fileInput = document.getElementById('mc-file');
@@ -2120,8 +2122,8 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
   const config = document.getElementById('mc-config');
   const targetSel = document.getElementById('mc-target-sheet');
   const sourceSel = document.getElementById('mc-source-sheet');
-  const targetKeySel = document.getElementById('mc-target-key');
-  const sourceKeySel = document.getElementById('mc-source-key');
+  const keysBox = document.getElementById('mc-keys');
+  const addKeyBtn = document.getElementById('mc-add-key');
   const ciChk = document.getElementById('mc-ci');
   const colsBox = document.getElementById('mc-cols');
   const runBtn = document.getElementById('mc-run');
@@ -2129,6 +2131,8 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
   const preview = document.getElementById('mc-preview');
   const dlBtn = document.getElementById('mc-download');
   const status = document.getElementById('mc-status');
+
+  const KEY_SEP = '\u241F'; // ตัวคั่นที่ไม่น่าจะอยู่ในข้อมูลจริง
 
   let workbook = null;
   let resultRows = null, resultHeaders = null, resultSheetName = null, srcFileName = 'mapped';
@@ -2147,6 +2151,9 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
     sel.innerHTML = items.map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('');
     if(pick && items.includes(pick)) sel.value = pick;
   }
+  function optionsHtml(items, pick){
+    return items.map(i => `<option value="${escapeHtml(i)}" ${i === pick ? 'selected' : ''}>${escapeHtml(i)}</option>`).join('');
+  }
   // เดาคอลัมน์ key จากชื่อ
   function guessKey(headers, prefer){
     for(const p of prefer){
@@ -2160,24 +2167,67 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
     return headers[0];
   }
 
-  function refreshKeys(){
+  // อ่านคู่ key ทั้งหมดจาก UI
+  function getKeyPairs(){
+    return Array.from(keysBox.querySelectorAll('.mc-key-row')).map(row => ({
+      t: row.querySelector('.mc-tkey').value,
+      s: row.querySelector('.mc-skey').value
+    })).filter(p => p.t && p.s);
+  }
+
+  function addKeyRow(tPick, sPick){
     const tHeaders = headersOf(targetSel.value);
     const sHeaders = headersOf(sourceSel.value);
-    fillSelect(targetKeySel, tHeaders, guessKey(tHeaders, ['newcode','code']));
-    fillSelect(sourceKeySel, sHeaders, guessKey(sHeaders, ['code']));
+    if(tPick === undefined){
+      // เลือกคอลัมน์ที่ชื่อตรงกันทั้งสองชีตและยังไม่ถูกใช้เป็น key ให้ก่อน
+      const used = getKeyPairs();
+      const usedT = used.map(p => p.t), usedS = used.map(p => p.s);
+      const common = tHeaders.find(h => sHeaders.includes(h) && !usedT.includes(h) && !usedS.includes(h));
+      tPick = common || tHeaders.find(h => !usedT.includes(h)) || tHeaders[0];
+      sPick = common || sHeaders.find(h => !usedS.includes(h)) || sHeaders[0];
+    }
+    const row = document.createElement('div');
+    row.className = 'mc-key-row';
+    row.innerHTML = `
+      <select class="mc-tkey" title="คอลัมน์ฝั่งปลายทาง">${optionsHtml(tHeaders, tPick)}</select>
+      <span class="mc-eq">=</span>
+      <select class="mc-skey" title="คอลัมน์ฝั่งต้นทาง">${optionsHtml(sHeaders, sPick)}</select>
+      <button type="button" class="mc-key-remove">ลบ</button>
+    `;
+    row.querySelector('.mc-tkey').addEventListener('change', refreshCols);
+    row.querySelector('.mc-skey').addEventListener('change', refreshCols);
+    row.querySelector('.mc-key-remove').addEventListener('click', ()=>{
+      if(keysBox.querySelectorAll('.mc-key-row').length <= 1){ setStatus('ต้องมี key อย่างน้อย 1 คู่', 'err'); return; }
+      row.remove();
+      refreshCols();
+    });
+    keysBox.appendChild(row);
+  }
+
+  function refreshKeys(){
+    keysBox.innerHTML = '';
+    colsBox.innerHTML = '';
+    const tHeaders = headersOf(targetSel.value);
+    const sHeaders = headersOf(sourceSel.value);
+    addKeyRow(guessKey(tHeaders, ['newcode','code']), guessKey(sHeaders, ['code']));
     refreshCols();
   }
 
   function refreshCols(){
     const tHeaders = headersOf(targetSel.value);
     const sHeaders = headersOf(sourceSel.value);
-    const tKey = targetKeySel.value, sKey = sourceKeySel.value;
+    const sKeys = getKeyPairs().map(p => p.s);
+    // จำค่าที่ติ๊กไว้ก่อนหน้า เพื่อไม่ให้หายเวลาเพิ่ม/เปลี่ยน key
+    const hadCols = colsBox.querySelector('.mc-col');
+    const prevChecked = hadCols ? new Set(Array.from(colsBox.querySelectorAll('.mc-col:checked')).map(c => c.value)) : null;
+
     // คอลัมน์ที่จะดึง = คอลัมน์ต้นทาง (ไม่รวม key) ; ติ๊กเริ่มต้นเฉพาะตัวที่ปลายทางมีชื่อตรงกัน
-    const candidates = sHeaders.filter(h => h !== sKey);
+    const candidates = sHeaders.filter(h => !sKeys.includes(h));
     colsBox.innerHTML = candidates.map(h => {
       const inTarget = tHeaders.includes(h);
+      const checked = prevChecked ? prevChecked.has(h) : inTarget;
       return `<label style="display:flex;align-items:center;gap:6px;font-size:13px;">
-        <input type="checkbox" class="mc-col" value="${escapeHtml(h)}" ${inTarget ? 'checked' : ''}>
+        <input type="checkbox" class="mc-col" value="${escapeHtml(h)}" ${checked ? 'checked' : ''}>
         ${escapeHtml(h)}${inTarget ? '' : ' <span style="color:var(--muted);font-size:11px;">(ปลายทางยังไม่มี — จะเพิ่มคอลัมน์ให้)</span>'}
       </label>`;
     }).join('') || '<span style="color:var(--muted);font-size:13px;">ไม่พบคอลัมน์อื่นในชีตต้นทาง</span>';
@@ -2197,7 +2247,7 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
         refreshKeys();
         config.style.display = 'block';
         preview.innerHTML = ''; dlBtn.style.display = 'none';
-        setStatus('โหลดไฟล์แล้ว — ตั้งค่าแล้วกด "ดึงข้อมูล (Map)"', 'ok');
+        setStatus('โหลดไฟล์แล้ว — ตั้งค่า key แล้วกด "ดึงข้อมูล (Map)"', 'ok');
       }catch(err){ setStatus('อ่านไฟล์ไม่สำเร็จ: ' + err.message, 'err'); }
     };
     reader.readAsArrayBuffer(file);
@@ -2208,10 +2258,21 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
     if(ci){ s = s.trim().toLowerCase(); }
     return s;
   }
+  // รวมค่าหลายคอลัมน์เป็น key เดียว — ถ้าทุกส่วนว่างถือว่าไม่มี key
+  function makeKey(row, cols, ci){
+    const parts = cols.map(c => norm(row[c], ci));
+    return parts.every(p => p === '') ? '' : parts.join(KEY_SEP);
+  }
 
   function run(){
     if(!workbook) return;
-    const tKey = targetKeySel.value, sKey = sourceKeySel.value;
+    const pairs = getKeyPairs();
+    if(pairs.length === 0){ setStatus('ยังไม่ได้เลือกคู่ key', 'err'); return; }
+    const dupT = pairs.map(p => p.t).find((t, i, arr) => arr.indexOf(t) !== i);
+    const dupS = pairs.map(p => p.s).find((s, i, arr) => arr.indexOf(s) !== i);
+    if(dupT || dupS){ setStatus('มีคอลัมน์ key ซ้ำกัน: ' + (dupT || dupS), 'err'); return; }
+
+    const tCols = pairs.map(p => p.t), sCols = pairs.map(p => p.s);
     const ci = ciChk.checked;
     const pickCols = Array.from(document.querySelectorAll('.mc-col:checked')).map(c => c.value);
     if(pickCols.length === 0){ setStatus('ยังไม่ได้เลือกคอลัมน์ที่จะดึง', 'err'); return; }
@@ -2219,11 +2280,14 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
     const targetRows = rowsOf(targetSel.value);
     const sourceRows = rowsOf(sourceSel.value);
 
-    // สร้าง lookup map จากต้นทาง
+    // สร้าง lookup map จากต้นทาง (ถ้า key ซ้ำ ใช้แถวแรกที่เจอ)
     const map = new Map();
+    let dupCount = 0;
     sourceRows.forEach(r => {
-      const k = norm(r[sKey], ci);
-      if(k !== '' && !map.has(k)) map.set(k, r);
+      const k = makeKey(r, sCols, ci);
+      if(k === '') return;
+      if(map.has(k)) dupCount++;
+      else map.set(k, r);
     });
 
     // header ปลายทาง + คอลัมน์ใหม่ที่ยังไม่มี
@@ -2234,7 +2298,7 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
     const filled = targetRows.map(row => {
       const out = Object.assign({}, row);
       tHeaders.forEach(h => { if(!(h in out)) out[h] = ''; });
-      const k = norm(row[tKey], ci);
+      const k = makeKey(row, tCols, ci);
       const found = k !== '' ? map.get(k) : null;
       if(found){ matched++; pickCols.forEach(c => { out[c] = found[c] !== undefined ? found[c] : ''; }); }
       else { unmatched++; }
@@ -2244,7 +2308,10 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
     resultRows = filled; resultHeaders = tHeaders; resultSheetName = targetSel.value;
     renderPreviewTable(preview, filled, 50);
     dlBtn.style.display = 'inline-block';
-    setStatus(`เสร็จแล้ว — จับคู่ได้ ${matched} แถว, ไม่พบใน "${sourceSel.value}" ${unmatched} แถว`, unmatched ? '' : 'ok');
+    const keyDesc = pairs.map(p => p.t + ' = ' + p.s).join(' และ ');
+    let msg = `เสร็จแล้ว (key: ${keyDesc}) — จับคู่ได้ ${matched} แถว, ไม่พบใน "${sourceSel.value}" ${unmatched} แถว`;
+    if(dupCount) msg += ` | ต้นทางมี key ซ้ำ ${dupCount} แถว (ใช้แถวแรกที่เจอ)`;
+    setStatus(msg, unmatched ? '' : 'ok');
   }
 
   function download(){
@@ -2268,13 +2335,13 @@ document.getElementById('count-clear').addEventListener('click', ()=>{
   fileInput.addEventListener('change', e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
   targetSel.addEventListener('change', refreshKeys);
   sourceSel.addEventListener('change', refreshKeys);
-  targetKeySel.addEventListener('change', refreshCols);
-  sourceKeySel.addEventListener('change', refreshCols);
+  addKeyBtn.addEventListener('click', ()=>{ if(!workbook) return; addKeyRow(); refreshCols(); });
   runBtn.addEventListener('click', run);
   dlBtn.addEventListener('click', download);
   clearBtn.addEventListener('click', ()=>{
     workbook = null; resultRows = null; fileInput.value = '';
     filenameEl.textContent = ''; config.style.display = 'none';
+    keysBox.innerHTML = ''; colsBox.innerHTML = '';
     preview.innerHTML = ''; dlBtn.style.display = 'none'; setStatus('');
   });
 })();
